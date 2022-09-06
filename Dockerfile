@@ -27,7 +27,6 @@ RUN \
                    epel-release \
                    $YUM_PKG_NAME && \
     yum -y install supervisor \
-                   cronie \
                    fetch-crl \
                    osg-ca-certs \
                    which \
@@ -61,5 +60,29 @@ COPY 00-cleanup.conf /etc/supervisord.d/
 COPY update-certs-rpms-if-present.sh /etc/cron.hourly/
 COPY cron.d/* /etc/cron.d/
 RUN chmod go-w /etc/supervisord.conf /usr/local/sbin/* /etc/cron.*/*
+
+# Install a rootless cron implementation
+ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.1/supercronic-linux-amd64 \
+    SUPERCRONIC=supercronic-linux-amd64 \
+    SUPERCRONIC_SHA1SUM=d7f4c0886eb85249ad05ed592902fa6865bb9d70
+
+RUN curl -fsSLO "$SUPERCRONIC_URL" \
+ && echo "${SUPERCRONIC_SHA1SUM}  ${SUPERCRONIC}" | sha1sum -c - \
+ && chmod +x "$SUPERCRONIC" \
+ && mv "$SUPERCRONIC" "/usr/local/bin/${SUPERCRONIC}" \
+ && ln -s "/usr/local/bin/${SUPERCRONIC}" /usr/local/bin/supercronic
+
+# Add an unprivileged OSG user
+RUN useradd -m osg
+
+# Let OSG own the cert dir for fetch-crl
+RUN chown -R osg: /etc/grid-security/certificates/
+
+# Let OSG own the log dir to create a supervisor log file
+RUN chown osg: /var/log 
+RUN chown -R osg: /var/log/supervisor
+
+# We rootless now!
+#USER osg
 
 CMD ["/usr/local/sbin/supervisord_startup.sh"]
